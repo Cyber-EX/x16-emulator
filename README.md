@@ -37,7 +37,7 @@ Features
 Binaries & Compiling
 --------------------
 
-Binary releases for macOS, Windows and x86_64 Linux are available on the [releases page][releases].
+Binary releases for macOS, Windows and Linux are available on the [releases page][releases].
 
 The emulator itself is dependent only on SDL2. However, to run the emulated system you will also need a compatible `rom.bin` ROM image. This will be
 loaded from the directory containing the emulator binary, or you can use the `-rom .../path/to/rom.bin` option.
@@ -98,7 +98,6 @@ You can start `x16emu`/`x16emu.exe` either by double-clicking it, or from the co
 * `-fsroot <dir>` specifies a file system root for the HostFS interface. This lets you save and load files without an SD card image. (As of R42, this is the preferred method.)
 * `-serial` makes accesses to the host filesystem go through the Serial Bus [experimental].
 * `-nohostieee` disables IEEE API interception to access the host fs.
-* `-geos` launches GEOS at startup.
 * `-warp` causes the emulator to run as fast as possible, possibly faster than a real X16.
 * `-gif <filename>[,wait]` to record the screen into a GIF. See below for more info.
 * `-wav <filename>[{,wait|,auto}]` to record audio into a WAV. See below for more info.
@@ -119,6 +118,11 @@ You can start `x16emu`/`x16emu.exe` either by double-clicking it, or from the co
 * `-sound` can be used to specify the output sound device.
 * `-abufs` can be used to specify the number of audio buffers (defaults to 8). If you're experiencing stuttering in the audio try to increase this number. This will result in additional audio latency though.
 * `-via2` installs the second VIA chip expansion at $9F10.
+* `-midline-effects` enables mid-scanline raster effects at the cost of vastly increased host CPU usage.
+* `-mhz <n>` sets the emulated CPU's speed. Range is from 1-40. This option is mainly for testing and benchmarking.
+* `-enable-ym2151-irq` connects the YM2151's IRQ pin to the system's IRQ line with a modest increase in host CPU usage.
+* `-wuninit` enables warnings on the console for reads of uninitialized memory.
+* `-zeroram` fills RAM at startup with zeroes instead of the default of random data.
 * `-version` prints additional version information of the emulator and ROM.
 * When compiled with `#define TRACE`, `-trace` will enable an instruction trace on stdout.
 
@@ -147,22 +151,26 @@ The X16 uses a PS/2 keyboard, and the ROM currently supports several different l
 
 Keys that produce international characters (like [ä] or [ç]) will not produce any character.
 
-Since the emulator tells the computer the *position* of keys that are pressed, you need to configure the layout for the computer independently of the keyboard layout you have configured on the host.
+Since the host computer tells the Commander X16 via the emulator the *position* of keys that are pressed, you need to configure the layout for the X16 independently of the keyboard layout you have configured on the host.
 
-**Use the F9 key to cycle through the layouts, or set the keyboard layout at startup using the `-keymap` command line argument.**
+**Use the `MENU` command to select a layout, or set the keyboard layout at startup using the `-keymap` command line argument.**
 
 The following keys can be used for controlling games:
 
 |Keyboard Key  | SNES Equivalent |
-|--------------|----------------|
-|Ctrl          | B 		|
-|Alt 	       | Y		|
-|Space         | SELECT         |
-|Enter         | START		|
-|Cursor Up     | UP		|
-|Cursor Down   | DOWN		|
-|Cursor Left   | LEFT		|
-|Cursor Right  | RIGHT		|
+|--------------|-----------------|
+|X or Ctrl     | A               |
+|Z or Alt      | B               |
+|S 	           | X               |
+|A 	           | Y               |
+|D 	           | L               |
+|C 	           | R               |
+|Shift         | SELECT          |
+|Enter         | START           |
+|Cursor Up     | UP              |
+|Cursor Down   | DOWN            |
+|Cursor Left   | LEFT            |
+|Cursor Right  | RIGHT           |
 
 
 Functions while running
@@ -171,7 +179,9 @@ Functions while running
 #### Windows and Linux
 * `Ctrl` + `F` and `Ctrl` + `Return` will toggle full screen mode.
 * `Ctrl` + `M` will toggle mouse capture mode.
+* `Ctrl` + `P` will write a screenshot in PNG format to disk.
 * `Ctrl` + `R` will reset the computer.
+* `Ctrl` + `Backspace` will send an NMI to the computer (like RESTORE key).
 * `Ctrl` + `S` will save a system dump configurable with `-dump`) to disk.
 * `Ctrl` + `V` will paste the clipboard by injecting key presses.
 * `Ctrl` + `=` and `Ctrl` + `+` will toggle warp mode.
@@ -179,7 +189,9 @@ Functions while running
 #### Mac OS
 * `⌘F` and `⌘Return` will toggle full screen mode.
 * `⇧⌘M` will toggle mouse capture mode.
+* `⌘P` will write a screenshot in PNG format to disk.
 * `⌘R` will reset the computer.
+* `⌘Delete` aka `⌘Backspace` will send an NMI to the computer (like RESTORE key).
 * `⌘S` will save a system dump (configurable with `-dump`) to disk.
 * `⌘V` will paste the clipboard by injecting key presses.
 * `⌘=` and `⇧⌘+` will toggle warp mode.
@@ -201,15 +213,44 @@ With the argument `-wav`, followed by a filename, an audio recording will be sav
 If the option `,wait` is specified after the filename, it will start recording on `POKE $9FB6,1`. If the option `,auto` is specified after the filename, it will start recording on the first non-zero audio signal. It will pause recording on `POKE $9FB6,0`. `PEEK($9FB6)` returns a 1 if recording is enabled but not active.
 
 
+Emulator I/O registers
+-------------------
+x16-emulator exposes registers in the range of, from `$9FB0`-`$9FBF`, which allows one to control or toggle various emulator features from within emulated code.
+
+When writing machine code that uses these registers, good practice is to read `$9FBE` and `$9FBF` and check for their return values. If the emulator is present, those memory locations will return the ASCII/PETSCII characters "1" and "6" respectively (`$31` and `$36` hex).  After verifying that the code is running under the emulator, you can confidently use the features provided by these registers.
+
+Several of the following registers are particularly useful for debugging. In particular, writing data to `$9FB9`, `$9FBA`, or `$9FBB` will output debug information to the console, terminal, or command prompt window from which you ran x16emu.
+
+
+| Register | Read Behavior | Write Behavior |
+|-|-|-|
+| \$9FB0 | Returns debugger enabled flag | `0` disables, `1` enables the debugger, overriding the absence or presence of the `-debug` command line argument. |
+| \$9FB1 | Returns video logging flag | `0` disables, `1` enables logging of VRAM accesses to the console |
+| \$9FB2 | Returns keyboard logging flag | `0` disables, `1` enables logging of keyboard events to the console |
+| \$9FB3 | Returns echo mode | `0` disables, `1` enables raw echo, `2` enables cooked (`\Xnn` for non-ASCII), and `3` enables ISO (w/ conversion to UTF-8). When on, characters sent via the `BSOUT` KERNAL call will also appear on the console. |
+| \$9FB4 | Returns save-on-exit flag | `0` disables, `1` enables save-on-exit. When this option is set and the program counter reaches \$FFFF, the emulator outputs a dump of emulator state to `dump.bin` before exiting. |
+| \$9FB5 | Returns GIF recorder state | `0` pauses, `1` captures a single frame, and `2` activates/resumes GIF recording. The path to the GIF file must have been passed to the `-gif` command line option in advance. |
+| \$9FB6 | Returns WAV recorder state | `0` pauses, `1` enables WAV recording, and `2` sets up autostart. The path to the WAV file must have been passed to the `-wav` command line option in advance. |
+| \$9FB7 | Returns emu command key flag | `0` allows, and `1` inhibits most emulator command keys. Setting this flag prevents the emulator from intercepting keystrokes such as Ctrl+V/⌘V or Ctrl+R/⌘R, allowing the Commander X16 application running inside to make use of them. |
+| \$9FB8 | Latches the cpu clock counter and returns bits 0-7 | Resets the cpu clock counter to 0 |
+| \$9FB9 | Returns bits 8-15 from the latched cpu clock counter value | Outputs `"User debug 1: $xx"` to the console with xx replaced by the value written. |
+| \$9FBA | Returns bits 16-23 from the latched cpu clock counter value | Outputs `"User debug 2: $xx"` to the console with xx replaced by the value written. |
+| \$9FBB | Returns bits 24-31 from the latched cpu clock counter value | Outputs the given character to the console. This is basically a STDOUT port for programs running in the emulator. Only printable characters are allowed. Non-printables are replaced with &#xfffd;.
+| \$9FBC | - | - |
+| \$9FBD | Returns the keymap index, based on the argument to the `-keymap` command line option | - |
+| \$9FBE | Returns the value `$31`/ASCII "1", useful for emulator presence detection | - |
+| \$9FBF | Returns the value `$36`/ASCII "6", useful for emulator presence detection | - |
+
+
 BASIC and the Screen Editor
 ---------------------------
 
 On startup, the X16 presents direct mode of BASIC V2. You can enter BASIC statements, or line numbers with BASIC statements and `RUN` the program, just like on Commodore computers.
 
-* To stop execution of a BASIC program, hit the `RUN/STOP` key (`Esc` in the emulator), or `Ctrl + C`.
-* To insert characters, first insert spaces by pressing `Shift + Backspaces`, then type over those spaces.
-* To clear the screen, press `Shift + Home`.
-* The X16 does not have a `STOP + RESTORE` function.
+* To stop execution of a BASIC program, hit the `RUN/STOP` key (`Pause`), or `Ctrl+C`.
+* To insert characters, first insert spaces by pressing `Shift+Backspace` or `Insert`, then type over those spaces.
+* To clear the screen, press `Shift+Home`.
+* To send NMI, similar to `STOP+RESTORE` on the C64, use Ctrl+Backspace/⌘Delete. On real hardware this is done with `Ctrl+Alt+RESTORE` (`Ctrl+Alt+PrtScr`) or by pressing the NMI button.
 
 
 SD Card Images
@@ -255,11 +296,11 @@ If the system ROM contains any version of the KERNAL, and there is no SD card im
       SAVE"BAR.PRG"
       OPEN2,8,2,"FOO,S,R"
 
-The emulator will interpret filenames relative to the directory it was started in. On macOS, when double-clicking the executable, this is the home directory.
+The emulator will interpret filenames relative to the directory it was started in. On macOS, when double-clicking the executable, this is the home directory. To specify a different path as the emulated root, you can use the `-fsroot` command line option.
 
-To avoid incompatibility problems between the PETSCII and ASCII encodings, you can
+To avoid compatibility problems between the PETSCII and ASCII encodings, you can
 
-* use lower case filenames on the host side, and unshifted filenames on the X16 side.
+* use uppercase filenames on the host side, and unshifted filenames on the X16 side.
 * use `Ctrl+O` to switch to the X16 to ISO mode for ASCII compatibility.
 * use `Ctrl+N` to switch to the upper/lower character set for a workaround.
 
@@ -272,7 +313,7 @@ BASIC programs are encoded in a tokenized form when saved. They are not simply A
 
 * To convert the basic file from ASCII to tokenized BASIC encoding, reboot the machine and paste the ASCII text using `Ctrl + V` (Mac: `Cmd + V`) into the terminal. You can now run the program with `RUN`, or use the `SAVE` BASIC command to write the tokenized version to the host disk.  Below is an example.
   1. Copy ASCII text from host basic file "PRG.BAS"
-  2. Past into new terminal session
+  2. Paste into new terminal session
   3. `SAVE"ENCODED.BAS`
   4. Now you can restart the emulator and load the encoded basic file with `LOAD"ENCODED.BAS"`
   5. Run with `RUN"ENCODED.BAS"`
@@ -283,13 +324,13 @@ BASIC programs are encoded in a tokenized form when saved. They are not simply A
 Using the KERNAL/BASIC environment
 ----------------------------------
 
-Please see the KERNAL/BASIC documentation.
+Please see the [KERNAL/BASIC documentation](https://github.com/X16Community/x16-docs/).
 
 
 Debugger
 --------
 
-The debugger requires `-debug` to start. Without it it is effectively disabled.
+The debugger requires `-debug` to start. Without it, it is disabled.
 
 There are 2 panels you can control. The code panel, the top left half, and the data panel, the bottom half of the screen. You can also edit the contents of the registers PC, A, X, Y, and SP.
 
@@ -322,7 +363,7 @@ The debugger keys are similar to the Microsoft Debugger shortcut keys, and work 
 
 When `-debug` is selected the STP instruction (opcode $DB) will break into the debugger automatically.
 
-Effectively keyboard routines only work when the debugger is running normally. Single stepping through keyboard code will not work at present.
+Keyboard routines only work when the emulator is running normally. Single stepping through keyboard code will not work at present.
 
 CRT File Format
 ---------------
@@ -367,15 +408,11 @@ For all "No Data" banks, the data in RAM is *undefined*. While the emulator curr
 
 ### Vectors
 
-Since the ROM banks occupy the same address range as the system ROMs, this affects the vectors the system interrupts, as well as the BRK instruction. Programmers are strongly advised to reserve the last 6 bytes of each bank. Use the following values to populate this block: 
+X16 hardware, and thus the emulator, will only read 6502 vectors out of bank 0. This is done via the CPU's VPB pin being connected to the ROM bank latch reset pin. In the past specific vectors were recommended in cartridge ROMs, but this is no longer true. In cartridges, the addresses `$FFFA`-`$FFFF` are free to use for data.
 
-```x86asm
-; These constants should be exposed in the last 6 bytes
-; accessible to the CPU starting at address $FFFA.
-.word $03B7 ; `banked_nmi` ram trampoline
-.word $FFFF ; dummy value, reset outside of bank 0 isn't ever used
-.word $038B ; `banked_irq` ram trampoline
-```
+
+<!-- For PDF formatting -->
+<div class="page-break"></div>
 
 ## MakeCart Conversion Tool
 
@@ -477,11 +514,14 @@ All rights reserved. License: 2-clause BSD
 
 Release Notes
 -------------
-See [RELEASES](RELEASES.md).
+See [RELEASES](RELEASES.md#releases).
 
 
 <!-------------------------------------------------------------------->
 [releases]: https://github.com/X16Community/x16-emulator/releases
-[webassembly]: webassembly/WebAssembly.md
+[webassembly]: http://github.com/X16Community/x16-emulator/blob/master/webassembly/WebAssembly.md
 [x16rom-build]: https://github.com/X16Community/x16-rom#releases-and-building
 [x16rom]: https://github.com/X16Community/x16-rom
+
+<!-- For PDF formatting -->
+<div class="page-break"></div>

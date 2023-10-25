@@ -1,8 +1,114 @@
+
 <p align="center">
   <img src="./.gh/logo.png" />
 </p>
 
+## Releases
 
+### Release 45 ("Nuuk")
+
+This is a minor release with respect to the emulator.  The bulk of the changes are in the [ROM](https://github.com/X16Community/x16-rom/tree/r45#release-45-nuuk).
+
+* Features/Fixes
+	* Revert VERA PSG amplitude resolution back to 6 bits. This was upped previously to match VERA firmware. It was subsequently reverted in VERA to make room for the FX feature. [akumanatt]
+	* Intellimouse support added to the emulated SMC, partially implementing the new feature in hardware SMC firmware 45.1.0. [stefan-b-jakobsson]
+		* Scroll wheel is supported (mouse device ID 3)
+		* Not implemented: Extra buttons (mouse device ID 4)
+	* New emulator debug register behaviors
+		* Reading from \$9FB8-\$9FBB in this order returns the 32-bit CPU clock counter, snapshotted at the time \$9FB8 is read. Previously the clock counter would remain in motion and the upper counter bits could roll over unpredictably.
+		* Writing to \$9FB8-\$9FBB has new behaviors:
+			* \$9FB8: resets the cpu clock counter to 0.
+			* \$9FB9: prints a debug message to the console `User debug 1: $xx`.
+			* \$9FBA: prints a debug message to the console `User debug 2: $xx`.
+			* \$9FBB: prints the UTF-8 representation of the ISO character to the console. This can be treated like a debug STDOUT.
+		* Before using any of these emulator debug registers, it's recommended to test for emulator presence first.
+			* Read from `$9FBE` and `$9FBF`. When running under the emulator, the returned values should be `$31` and `$36` respectively. If any other values are returned, you can usually assume to be running on real hardware. While the stock machine doesn't have any I/O devices that listen to the emulator I/O range, an add-on card could choose to use that same address space in the future for its own functions.
+	* New MCIOUT (blockwise write) implementation for HostFS, mirroring the feature in the kernal for use on SD card.
+	* New command key and capture behavior:
+		* Ctrl+M/⇧⌘M is always processed by the emulator to toggle (mouse/keyboard) capture, regardless of the state of the "Disable Emulator Keys" flag.
+		* Turning capture mode on disables all other emulator keys until capture mode is toggled off. While capture is on, the emulator also routes most OS shortcut key combos to the X16: for instance, Alt+Tab.
+
+
+### Release 44 ("Milan")
+
+This is the third release of x16-emulator by the X16Community team
+
+* Features/Fixes
+	* Many changes to HostFS, including
+		* Fix regression for loading "`:*`" from HostFS while also using an SD card image
+		* Fix `-prg` and `-sdcard` options working together, which did not properly handle the case after emulator reset
+		* Proper wildcard behavior in dir filters and OPEN string
+		* Fix filetype directory filter command parsing
+		* Add `$=L` long mode directory listing to emulate the new feature in the ROM.
+		* Speed up directory filetype filter
+		* Add CMD/SD2IEC style directory navigation: `CD:←` to enter parent directory
+		* Partial emulation of case-insensitivity in filenames on case-sensitive host filesystems.
+			* This works in `OPEN` strings and directory names in commands (`CD:`, etc.) which do not contain a `/` character.
+			* It also works on the last path segment in relative or absolute paths in directory names or `OPEN` strings. In other words, if given a path specification containing one or more `/` characters, it will do only a case-insensitive search on the part after the final `/`.
+		* Proper translation between UTF-8 filenames and their ISO representations.
+	* Implement VPB behavior to match hardware [akumanatt]
+		* Fix BRK to have VPB behavior
+	* Support for additional keycodes (NumLock, Menu) [stefan-b-jakobsson]
+	* Fix debugger to set the correct bank for breakpoints [gaekwad]
+	* New `-fullscreen` CLI option
+	* Proper cleanup when the emulator exits when in full screen [irmen]
+	* FX emulation, which mirrors the features in the FX enhancement to the VERA firmware. See the [VERA FX Reference](https://github.com/X16Community/x16-docs/blob/master/VERA%20FX%20Reference.md) for details.
+	* Writing bit 6 and bit 7 together into VERA_AUDIO_CTRL now enables looping the PCM FIFO (and does not reset the FIFO). Any other write into VERA_AUDIO_CTRL disables looping.
+	* New `-opacity` CLI option for window transparency [tstibor]
+	* New support for screenshots (Ctrl+P/⌘P) [dressupgeekout]
+	* Fix small memory leak caused by pasting into the emulator
+	* Use relative mouse motion while in grabbed mode
+	* Remove `-geos` CLI option [dressupgeekout]
+	* New YM2151 audio core: remove old MAME core, replace with ymfm
+		* Allows for IRQs from the YM, requires specifying `-enable-ym2151-irq` on the command line
+	* Emulate hardware open bus behavior when reading from a device that doesn't exist in the `$9Fxx` space
+	* Reset via I2C command: defer machine reset to the main loop, which allows the I2C write routine to return cleanly.
+	* Fix 65C02 `BIT` immediate behavior [XarkLabs]
+	* New NMI trigger emulator hotkey, emulates Ctrl+Alt+Restore on hardware (Ctrl+Backspace/⌘Delete) [XarkLabs]
+	* Fix line artifact in application icon/logo
+	* Grabbing the mouse with (Ctrl+M/⇧⌘M) now grabs the keyboard as well. It allows the emulator to receive keystrokes and key combinations which would otherwise be intercepted by the operating system.
+	* Fix description of fill value in `makecart`
+	* New features implemented in the [ROM](https://github.com/X16Community/x16-rom/tree/r44#release-44-milan)
+* Build
+	* Link-time optimization is now enabled by default
+	* Portability enhancements [dressupgeekout]
+	* Suppress clang warnings due to deprecated sprintf usage in ymfm lib [XarkLabs]
+
+### Release 43 ("Stockholm")
+
+This is the second release of x16-emulator by the X16Community team
+
+* **BREAKING CHANGE**
+	* The keyboard protocol between the emulated SMC and the KERNAL has changed, thus x16-emulator version R43 requires x16-rom version R43.
+	* This change also affects how the custom keyboard handler vector works (keyhdl). For details, see [Chapter 2 of the Programmer's Reference Guide](https://github.com/X16Community/x16-docs/blob/master/X16%20Reference%20-%2002%20-%20Editor.md#custom-keyboard-keynum-code-handler)
+	* **Your Keyboard will not work unless** you are running
+		* R43 of both x16-rom and x16-emulator
+* Features
+	* Updates to support translation from SDL scancodes to new keynum encoding supported by KERNAL [stefan-b-jakobsson]
+	* More granular support for RAM amount as argument to `-ram`
+	* Minor HostFS bugfixes and enhancements, including tying the activity light to HostFS activity.
+	* VERA updates: new support for 240p in NTSC/RGB modes. Chroma disable only works on NTSC.
+	* Stepping the debugger now supports stepping over `WAI`
+	* Debugger now shows the correct bank in the disassembly by default. [gaekwad]
+	* Debugger breakpoints are now bank-specific [gaekwad]
+	* Randomized RAM is now the default. New option: `-zeroram` [irmen]
+	* Host's mouse cursor is now shown unless either the KERNAL mouse is enabled or the mouse cursor is captured (Ctrl+M/⇧⌘M).
+	* Esc key is now Esc rather than STOP.  Pause key sends STOP.  (Ctrl+C is also recognized by the KERNAL as STOP)
+	* SD card emulation now responds to CMD9
+	* Emulated SMC can now assert NMI.
+	* Add `-mhz` option to select a speed other than 8
+	* When built with `TRACE`, the `-trace` output now shows the effective address for indirect and indexed opcodes and VERA data0/data1 reads and writes.
+	* New comamnd line option `-midline-effects` that supports mid-line changes to the palette or tile/sprite data. R42 always had this behavior, which results in performance degradation for programs write to VERA heavily if the host CPU is not fast enough. This behavior is now disabled by default. `-midline-effects` restores this optional behavior.
+	* New features implemented in the [ROM](https://github.com/X16Community/x16-rom/tree/r43#release-43-stockholm)
+* Other
+	* Release builds have link-time optimization enabled which seems to help performance.
+	* Add git hash of build to `-version` string.
+	* WebAssembly enhancements in the supporting html/js [Cyber-EX]
+	* Fixed potential off-by one row with non-zero DC_VSTART.
+	* Prevent laggy hostfs reads from causing the emulator to warp to catch up by translating the wall clock time to elapsed 6502 clocks. This effectively makes HostFS MACPTR behave like a DMA card, including the possibility that it prevents the CPU from executing instructions while interrupt sources may have been waiting for service.
+	* Bugfix: Process multiple SDL events per frame. (Fixed choppy mouse movement if there were keystrokes in the keyboard buffer)
+	* Audio resampling and ring buffer fixes [DragWx]
+	* Build fixes on Mac
 ### Release 42 ("Cambridge")
 
 This is the first release of x16-emulator by the X16Community team
